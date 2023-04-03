@@ -1,24 +1,26 @@
 import { useEffect, useState } from 'react';
 import { FaUser } from 'react-icons/fa';
-import ScrollToBottom from 'react-scroll-to-bottom';
 
 import io from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 
 interface Message {
-    username: string;
+    userName: string;
     message: string;
 }
 
 export default function Chat() {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [userName, setUserName] = useState('');
-    const [room, setRoom] = useState('');
+    const [userNameTyping, setUserNameTyping] = useState('');
+    const [isJoined, setIsJoined] = useState(false);
+    const [isTyping, setIsTyping] = useState(false);
     const [message, setMessage] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
 
     useEffect(() => {
-        const newSocket = io();
+        const newSocket = io('http://localhost:3000');
+
         setSocket(newSocket);
         return () => {
             newSocket.close()
@@ -30,22 +32,29 @@ export default function Chat() {
             return;
         };
 
-        socket.on('history', (messages: Message[]) => {
-            setMessages(messages)
+        socket.emit('findAllMessages',{}, (response: Message[]) => {
+            setMessages(response);
+        })
+  
+        socket.on('message', (message: Message) => {
+            setMessages((messages) => [...messages, message]);
         });
 
-        socket.on('message', (message: Message) => {
-            setMessages((messages) => [...messages, message])
+        socket.on('typing', ({isTyping, userName }) => {
+            setIsTyping(isTyping);
+            setUserNameTyping(userName);
         });
 
     },[socket])
 
-    const joinRoom = () => {
+    const join = () => {
         if(socket === null) {
             return;
         }
 
-        socket.emit('joinRoom', { userName, room })
+        socket.emit('join', { userName }, (userNames: string[]) => {
+            setIsJoined(true);
+        })
     }
 
     const sendMessage = () => {
@@ -53,31 +62,61 @@ export default function Chat() {
             return;
         }
 
-        socket.emit('message', { userName, room, message });
+        socket.emit('createMessage', { userName, message });
         setMessage('');
     }
 
+    const typing = (isTyping: boolean) => {
+        if(socket === null) {
+            return;
+        }
 
-
+        socket.emit('typing', { userName, isTyping })
+    }
+ 
     return  (
         <div>
-            <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Enter username..." />
-            <br />
-            <input type="text" value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Enter room name..." />
-            <br />
-            <button onClick={joinRoom}>Join Room</button>
-            <div>
-                <ScrollToBottom>
-                    {messages.map((message, index) => (
-                        <div key={index}>
-                        <FaUser /> {message.username}: {message.message}
-                        </div>
-                    ))}
-                </ScrollToBottom>
-            </div>
-            <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Enter message..."/>
-            <br />
-            <button onClick={sendMessage}>Send Message</button>
+            {isJoined ? (
+                <>
+                    <div>
+                        {messages.map((messageData, index) => (
+                            <div key={index}>
+                              <><FaUser /> {messageData.userName}: {messageData.message}</>
+                            </div>
+                        ))}
+                        {isTyping ? `${userNameTyping}: ...` :  null}
+                    </div>
+                    <input
+                        type="text"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        onFocus={() => typing(true)}
+                        onBlur={() => typing(false)}
+                        placeholder="Enter message..."
+                    />
+                    <br />
+                    <button
+                        onClick={sendMessage}
+                    >
+                        Send Message
+                    </button>
+                </>
+            ) : (
+                <>
+                    <input
+                        type="text"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        placeholder="Enter user name..."
+                    />
+                    <br />
+                    <button
+                        onClick={join}
+                    >
+                        Add user name
+                    </button>
+                </>
+            )}
         </div>
     );
 }
